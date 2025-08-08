@@ -5,10 +5,8 @@ use std::fs;
 use std::process;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
     // args could be empty, fix
-    let config = Config::new(&args).unwrap_or_else(|err| {
+    let config = Config::new(env::args()).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments: {err}");
         process::exit(1)
     });
@@ -27,13 +25,18 @@ struct Config {
 }
 
 impl Config {
-    fn new(args: &[String]) -> Result<Config, &'static str> {
-        if args.len() < 3 {
-            return Err("Not enough arguments");
-        }
-        let query = args[1].clone();
-        let file_path = args[2].clone();
-        // check if var is set
+    pub fn new(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {
+        args.next();
+        let query = match args.next() {
+            Some(arg) => arg,
+            None => return Err("did not get a query string"),
+        };
+
+        let file_path = match args.next() {
+            Some(arg) => arg,
+            None => return Err("did not get a file_path string"),
+        };
+
         let ignore_case = env::var("IGNORE_CASE").is_ok();
 
         Ok(Config {
@@ -54,3 +57,12 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
     // println!("the file contents are: {file_contents}");
     Ok(())
 }
+
+// TODO
+// add regex support
+// add recursive directory traversal -- check walkdir crate
+// add flags
+// add support for numbers
+// invert match(lines that dont match the pattern)
+// count  only flag -count that counts the number of  matching lines per file
+// list files that have lines taht match
