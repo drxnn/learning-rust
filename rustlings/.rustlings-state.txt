@@ -1,6 +1,6 @@
 DON'T EDIT THIS FILE!
 
-quiz2
+errors1
 
 enums3
 strings3
@@ -10,3 +10,6 @@ modules3
 hashmaps1
 hashmaps2
 hashmaps3
+options1
+options2
+options3

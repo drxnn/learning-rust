@@ -51,41 +51,24 @@ fn build_scores_table(results: &str) -> HashMap<&str, TeamScores> {
             goals_scored: team_2_score,
             goals_conceded: team_1_score,
         };
-        // if team already in table, add previous score + currect score
-        match scores.get(team_1_name) {
-            Some(x) => {
-                let temp_scored = x.goals_scored + team_1.goals_scored;
-                let temp_conceded = x.goals_conceded + team_1.goals_conceded;
 
-                scores.insert(
-                    team_1_name,
-                    TeamScores {
-                        goals_scored: temp_scored,
-                        goals_conceded: temp_conceded,
-                    },
-                );
-            }
-            _ => {
-                scores.insert(team_1_name, team_1);
-            }
-        }
-        match scores.get(team_2_name) {
-            Some(x) => {
-                let temp_scored = x.goals_scored + team_2.goals_scored;
-                let temp_conceded = x.goals_conceded + team_2.goals_conceded;
+        //
 
-                scores.insert(
-                    team_2_name,
-                    TeamScores {
-                        goals_scored: temp_scored,
-                        goals_conceded: temp_conceded,
-                    },
-                );
-            }
-            _ => {
-                scores.insert(team_2_name, team_2);
-            }
-        }
+        scores
+            .entry(team_1_name)
+            .and_modify(|el| {
+                el.goals_scored += team_1.goals_scored;
+                el.goals_conceded += team_1.goals_conceded;
+            })
+            .or_insert(team_1);
+
+        scores
+            .entry(team_2_name)
+            .and_modify(|el| {
+                el.goals_scored += team_2.goals_scored;
+                el.goals_conceded += team_2.goals_conceded;
+            })
+            .or_insert(team_2);
     }
 
     scores
