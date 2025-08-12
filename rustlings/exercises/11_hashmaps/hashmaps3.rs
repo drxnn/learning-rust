@@ -6,7 +6,7 @@
 // number of goals the team scored, and the total number of goals the team
 // conceded.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::AddAssign};
 
 // A structure to store the goal details of a team.
 #[derive(Default)]
@@ -15,13 +15,23 @@ struct TeamScores {
     goals_conceded: u8,
 }
 
+impl AddAssign for TeamScores {
+    fn add_assign(&mut self, other: Self) {
+        *self = Self {
+            goals_scored: self.goals_scored + other.goals_scored,
+            goals_conceded: self.goals_conceded + other.goals_conceded,
+        };
+    }
+}
 fn build_scores_table(results: &str) -> HashMap<&str, TeamScores> {
     // The name of the team is the key and its associated struct is the value.
     let mut scores = HashMap::<&str, TeamScores>::new();
 
     for line in results.lines() {
+        // line = "England,France,4,2"
         let mut split_iterator = line.split(',');
         // NOTE: We use `unwrap` because we didn't deal with error handling yet.
+
         let team_1_name = split_iterator.next().unwrap();
         let team_2_name = split_iterator.next().unwrap();
         let team_1_score: u8 = split_iterator.next().unwrap().parse().unwrap();
@@ -31,6 +41,51 @@ fn build_scores_table(results: &str) -> HashMap<&str, TeamScores> {
         // Keep in mind that goals scored by team 1 will be the number of goals
         // conceded by team 2. Similarly, goals scored by team 2 will be the
         // number of goals conceded by team 1.
+
+        let team_1 = TeamScores {
+            goals_scored: team_1_score,
+            goals_conceded: team_2_score,
+        };
+
+        let team_2 = TeamScores {
+            goals_scored: team_2_score,
+            goals_conceded: team_1_score,
+        };
+        // if team already in table, add previous score + currect score
+        match scores.get(team_1_name) {
+            Some(x) => {
+                let temp_scored = x.goals_scored + team_1.goals_scored;
+                let temp_conceded = x.goals_conceded + team_1.goals_conceded;
+
+                scores.insert(
+                    team_1_name,
+                    TeamScores {
+                        goals_scored: temp_scored,
+                        goals_conceded: temp_conceded,
+                    },
+                );
+            }
+            _ => {
+                scores.insert(team_1_name, team_1);
+            }
+        }
+        match scores.get(team_2_name) {
+            Some(x) => {
+                let temp_scored = x.goals_scored + team_2.goals_scored;
+                let temp_conceded = x.goals_conceded + team_2.goals_conceded;
+
+                scores.insert(
+                    team_2_name,
+                    TeamScores {
+                        goals_scored: temp_scored,
+                        goals_conceded: temp_conceded,
+                    },
+                );
+            }
+            _ => {
+                scores.insert(team_2_name, team_2);
+            }
+        }
     }
 
     scores
