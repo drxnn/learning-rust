@@ -1,6 +1,6 @@
 DON'T EDIT THIS FILE!
 
-generics2
+traits1
 
 enums3
 strings3
@@ -20,3 +20,4 @@ errors4
 errors5
 errors6
 generics1
+generics2
