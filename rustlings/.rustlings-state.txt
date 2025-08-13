@@ -1,6 +1,6 @@
 DON'T EDIT THIS FILE!
 
-quiz3
+tests1
 
 enums3
 strings3
@@ -26,3 +26,6 @@ traits2
 traits3
 traits4
 traits5
+lifetimes1
+lifetimes2
+lifetimes3
