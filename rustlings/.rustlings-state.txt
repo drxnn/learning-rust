@@ -1,6 +1,6 @@
 DON'T EDIT THIS FILE!
 
-iterators1
+iterators3
 
 enums3
 strings3
@@ -32,3 +32,5 @@ lifetimes3
 tests1
 tests2
 tests3
+iterators1
+iterators2
