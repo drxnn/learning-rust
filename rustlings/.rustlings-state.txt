@@ -1,6 +1,6 @@
 DON'T EDIT THIS FILE!
 
-iterators3
+iterators4
 
 enums3
 strings3
@@ -34,3 +34,4 @@ tests2
 tests3
 iterators1
 iterators2
+iterators3
