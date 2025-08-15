@@ -58,6 +58,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::process::Output;
+
     use super::*;
 
     fn get_map() -> HashMap<String, Progress> {
