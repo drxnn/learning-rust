@@ -1,5 +1,6 @@
 use clap::Parser;
-use minigrep::search;
+use minigrep::{count_matches, search};
+
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -24,6 +25,7 @@ struct Config {
     count: bool,
     line_number: bool,
     recursive: bool,
+    file_name_if_matches: bool,
 }
 #[derive(Parser)]
 struct Args {
@@ -39,6 +41,8 @@ struct Args {
     line_number: bool,
     #[arg(short, long)]
     recursive: bool,
+    #[arg(short = 'n', long)]
+    file_name_if_matches: bool,
 }
 impl From<Args> for Config {
     fn from(args: Args) -> Self {
@@ -51,20 +55,31 @@ impl From<Args> for Config {
             count: args.count,
             line_number: args.line_number,
             recursive: args.recursive,
+            file_name_if_matches: args.file_name_if_matches,
         }
     }
 }
 
 fn run(config: Config) -> Result<(), Box<dyn Error>> {
-    let file_contents_bytes = fs::read(config.file_path)?;
+    let file_contents_bytes = fs::read(&config.file_path)?;
     let file_contents = String::from_utf8(file_contents_bytes)?;
+    let output = search(&config.query, &file_contents, config.case_sensitive);
 
-    for (i, line) in search(&config.query, &file_contents, config.case_sensitive) {
+    for (i, line) in &output {
         if config.line_number {
             println!("{}: {}", i, line);
         } else {
             println!("{}", line);
         }
+    }
+
+    if config.count {
+        let count_matches = count_matches(&output);
+        println!("Number of matched lines found: {count_matches:?}");
+    }
+
+    if config.file_name_if_matches && output.len() > 0 {
+        println!("File name: {}", config.file_path)
     }
     // println!("the file contents are: {file_contents}");
     Ok(())
