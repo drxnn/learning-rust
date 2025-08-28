@@ -1,12 +1,17 @@
 use clap::Parser;
 use colored::Colorize;
+extern crate num_cpus;
 use minigrep::{Args, Config, count_matches, search};
 
+// use core::num;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::fs;
 use std::process;
+use std::sync::mpsc;
+// use std::sync::{Arc, Mutex};
+use std::thread;
 use walkdir::DirEntry;
 use walkdir::WalkDir;
 
@@ -25,6 +30,58 @@ struct Output {
     output_map: HashMap<String, Vec<(usize, String)>>,
 }
 
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    receiver: mpsc::Receiver<Job>,
+}
+
+struct Worker {
+    id: usize,
+    thread: thread::JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize, sender: mpsc::Sender<usize>) -> Self {
+        let thread = thread::spawn(move || {
+            println!("printing from thread number {}", id);
+
+            sender.send(id).unwrap()
+        });
+
+        Worker { id, thread }
+    }
+}
+impl ThreadPool {
+    pub fn new(size: usize) -> Self {
+        let mut workers = Vec::with_capacity(size);
+
+        let (worker_sender, thread_receiver) = mpsc::channel();
+
+        for id in 0..size {
+            let sender: mpsc::Sender<_> = worker_sender.clone();
+            workers.push(Worker::new(id as usize, sender));
+        }
+
+        let (sender, receiver) = mpsc::channel();
+        ThreadPool { workers, receiver }
+    }
+}
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+impl ThreadPool {
+    pub fn execute(self) {
+        // let job = Box::new(f);
+
+        // might not work for now, receive after threads are done
+        self.receiver.recv();
+
+        for handle in self.workers {
+            handle.thread.join().unwrap();
+        }
+    }
+}
+
 fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let current = env::current_dir().unwrap();
     let mut output = Output {
@@ -32,7 +89,14 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
     };
 
     if config.recursive {
+        let num_of_cpus = num_cpus::get();
         let mut entry: DirEntry;
+
+        // but use num_cpus - 1
+        let thread = ThreadPool::new(num_of_cpus);
+        thread.execute();
+
+        // how do I give files to the workers, in real time, while walking the directory
 
         for entry_walkdir in WalkDir::new(current) {
             entry = entry_walkdir?;
@@ -65,7 +129,7 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-
+        println!("num of CPU's is {}", num_of_cpus);
         if output.output_map.len() == 0 {
             eprintln!("{}", "No files match your pattern.".red());
             return Ok(());
