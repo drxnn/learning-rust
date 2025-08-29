@@ -18,83 +18,12 @@ optional: add support for numbers (for example flags that expect numeric values 
 // add flag so user can choose how many of the matches to show, example --show=10 would show only 10 matches
 // add flag to put all results into a file called output.txt
 */
-use clap::Parser;
+
 // use colored::Colorize;
-use regex::Regex;
-use regex::RegexBuilder;
-use std::env;
-use std::process;
-pub enum Pattern {
-    Literal {
-        text: String,
-        case_insensitive: bool,
-    },
-    Regex(Regex),
-}
 
-pub struct Config {
-    pub file_path: String,
-    pub pattern: Pattern,
-    pub ignore_case: bool,
-    pub invert: bool,
-    pub count: bool,
-    pub line_number: bool,
-    pub recursive: bool,
-    pub file_name_if_matches: bool,
-}
-#[derive(Parser)]
-pub struct Args {
-    query: String,
-    file_path: Option<String>,
-    #[arg(long = "icase")]
-    ignore_case: bool,
-    #[arg(short, long)]
-    invert: bool,
-    #[arg(short = 'E', long)]
-    regex: bool,
-    #[arg(short = 'c', long)]
-    count: bool,
-    #[arg(short, long)]
-    line_number: bool,
-    #[arg(short = 'r', long)]
-    recursive: bool,
-    #[arg(short = 'n', long)]
-    file_name_if_matches: bool,
-}
-impl From<Args> for Config {
-    fn from(args: Args) -> Self {
-        let ignore_case = args.ignore_case || env::var("IGNORE_CASE").is_ok();
+mod types;
+use types::{Config, Pattern};
 
-        let pattern = if args.regex {
-            match RegexBuilder::new(&args.query)
-                .case_insensitive(ignore_case)
-                .build()
-            {
-                Ok(re) => Pattern::Regex(re),
-                Err(e) => {
-                    eprintln!("Invalid regex `{}`: {}", args.query, e);
-                    process::exit(1);
-                }
-            }
-        } else {
-            Pattern::Literal {
-                text: args.query.clone(),
-                case_insensitive: ignore_case,
-            }
-        };
-
-        Config {
-            pattern,
-            file_path: args.file_path.unwrap_or("".to_string()),
-            ignore_case,
-            invert: args.invert,
-            count: args.count,
-            line_number: args.line_number,
-            recursive: args.recursive,
-            file_name_if_matches: args.file_name_if_matches,
-        }
-    }
-}
 pub fn count_matches(matches: &Vec<(usize, &str)>) -> usize {
     // right now only counts number of lines matches, fix so that it counts every occurrence of pattern provided
     return matches.len();
