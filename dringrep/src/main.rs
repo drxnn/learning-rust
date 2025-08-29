@@ -1,10 +1,10 @@
 use clap::Parser;
 use colored::Colorize;
 extern crate num_cpus;
-use minigrep::{count_matches, search};
+
 mod types;
 
-use types::{Args, Config, FileResult, ThreadPool};
+use dringrep::{Args, Config, FileResult, ThreadPool, count_matches, search};
 
 use std::env;
 use std::error::Error;
@@ -14,7 +14,9 @@ use std::fs;
 
 use std::process;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::mpsc;
+use std::time::Instant;
 
 use walkdir::DirEntry;
 use walkdir::WalkDir;
@@ -22,16 +24,16 @@ use walkdir::WalkDir;
 fn main() {
     let args = Args::parse();
     let config: Config = args.into();
+    let start = Instant::now();
 
     // dont need return value so we use if let
     if let Err(e) = run(config) {
         eprintln!("Application error: {e}");
         process::exit(1);
     }
+    let duration = start.elapsed();
+    println!("Finished in {:?}", duration);
 }
-
-// run is bloated right now
-// break it down into smaller functions, such as output formatting, file scanning fn, batch processing(send 50-100 files per worker)
 
 fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config: Arc<Config>) {
     for entry in batch {
@@ -48,14 +50,14 @@ fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config: Arc
                 }
             };
 
-            // is file valid to check or skip it
             if std::str::from_utf8(&bytes).is_err() {
                 return FileResult::Skip;
             }
             let file_name = entry.file_name();
 
             let file_contents = String::from_utf8_lossy(&bytes);
-            let temp = search(&config, &file_contents);
+
+            let temp = search(&*config, &file_contents);
 
             if temp.is_empty() {
                 return FileResult::Skip;
@@ -87,6 +89,7 @@ fn print_each_result(config: Arc<Config>, name: &str, v: (usize, &String)) {
 }
 
 fn run(config: Config) -> Result<(), Box<dyn Error>> {
+    let file_counter = Arc::new(Mutex::new(0));
     let current = env::current_dir().unwrap();
 
     let config = Arc::new(config);
@@ -94,7 +97,8 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         let num_of_cpus = num_cpus::get();
         let pool_size = if num_of_cpus > 1 { num_of_cpus - 1 } else { 1 };
         let mut entry: DirEntry;
-        let thread_pool = ThreadPool::new(pool_size);
+        let file_counter_clone = Arc::clone(&file_counter);
+        let thread_pool = ThreadPool::new(pool_size, file_counter_clone);
 
         const BATCH_SIZE: usize = 25;
 
@@ -157,5 +161,9 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         }
     }
 
+    println!(
+        "the number of processed files was: {}",
+        *file_counter.lock().unwrap()
+    );
     Ok(())
 }

@@ -86,13 +86,17 @@ pub struct ThreadPool {
     pub sender: Option<mpsc::Sender<Job>>,
 }
 
-struct Worker {
+pub struct Worker {
     pub id: usize,
     pub thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Worker {
-    pub fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Self {
+    pub fn new(
+        id: usize,
+        receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
+        counter: Arc<Mutex<usize>>,
+    ) -> Self {
         let thread = thread::spawn(move || {
             loop {
                 let job = {
@@ -103,6 +107,8 @@ impl Worker {
                 match job {
                     Ok(job) => {
                         job();
+                        let mut count = counter.lock().unwrap();
+                        *count += 1;
                     }
                     Err(_) => break,
                 }
@@ -116,14 +122,19 @@ impl Worker {
     }
 }
 impl ThreadPool {
-    pub fn new(size: usize) -> Self {
+    pub fn new(size: usize, counter: Arc<Mutex<usize>>) -> Self {
         let mut workers = Vec::with_capacity(size);
 
         let (sender, receiver) = mpsc::channel::<Job>();
         let receiver = Arc::new(Mutex::new(receiver));
 
         for id in 0..size {
-            workers.push(Worker::new(id as usize, Arc::clone(&receiver)));
+            let counter_clone = Arc::clone(&counter);
+            workers.push(Worker::new(
+                id as usize,
+                Arc::clone(&receiver),
+                counter_clone,
+            ));
         }
 
         ThreadPool {
