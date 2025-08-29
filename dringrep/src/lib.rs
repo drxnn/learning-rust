@@ -22,7 +22,8 @@ optional: add support for numbers (for example flags that expect numeric values 
 // use colored::Colorize;
 
 mod types;
-use types::{Config, Pattern};
+
+pub use types::{Args, Config, FileResult, Pattern, ThreadPool};
 
 pub fn count_matches(matches: &Vec<(usize, &str)>) -> usize {
     // right now only counts number of lines matches, fix so that it counts every occurrence of pattern provided
