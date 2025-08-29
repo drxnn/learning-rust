@@ -1,19 +1,21 @@
 use clap::Parser;
 use colored::Colorize;
 extern crate num_cpus;
-use minigrep::{Args, Config, count_matches, search};
+use minigrep::{count_matches, search};
+mod types;
 
-use std::collections::HashMap;
+use types::{Args, Config, FileResult, ThreadPool};
+
 use std::env;
 use std::error::Error;
 
 // use crossbeam::channel;
 use std::fs;
-use std::path::PathBuf;
+
 use std::process;
+use std::sync::Arc;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-use std::thread;
+
 use walkdir::DirEntry;
 use walkdir::WalkDir;
 
@@ -26,96 +28,6 @@ fn main() {
         eprintln!("Application error: {e}");
         process::exit(1);
     }
-}
-struct Output {
-    output_map: HashMap<String, Vec<(usize, String)>>,
-}
-
-pub struct ThreadPool {
-    workers: Vec<Worker>,
-    sender: Option<mpsc::Sender<Job>>,
-}
-
-struct Worker {
-    id: usize,
-    thread: Option<thread::JoinHandle<()>>,
-}
-
-impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Self {
-        let thread = thread::spawn(move || {
-            loop {
-                // so fetching of jobs is done at one time per worker, but the processing happens concurrently, so maybe send 50-100 files per worker
-                // at a time instead,
-                let job = {
-                    let recv_lock = receiver.lock().unwrap();
-                    recv_lock.recv()
-                };
-
-                match job {
-                    Ok(job) => {
-                        job();
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        Worker {
-            id,
-            thread: Some(thread),
-        }
-    }
-}
-impl ThreadPool {
-    pub fn new(size: usize) -> Self {
-        let mut workers = Vec::with_capacity(size);
-
-        let (sender, receiver) = mpsc::channel::<Job>();
-        let receiver = Arc::new(Mutex::new(receiver));
-
-        for id in 0..size {
-            workers.push(Worker::new(id as usize, Arc::clone(&receiver)));
-        }
-
-        ThreadPool {
-            workers,
-            sender: Some(sender),
-        }
-    }
-}
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        self.sender.take();
-        for worker in &mut self.workers {
-            if let Some(t) = worker.thread.take() {
-                t.join().unwrap();
-            }
-        }
-    }
-}
-
-type Job = Box<dyn FnOnce() + Send + 'static>;
-
-impl ThreadPool {
-    pub fn execute<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'static,
-    {
-        let job = Box::new(f);
-
-        if let Some(sender) = &self.sender {
-            sender.send(job).expect("Worker thread has shut down");
-        } else {
-            panic!("ThreadPool has been shut down");
-        }
-    }
-}
-
-enum FileResult {
-    Match(String, Vec<(usize, String)>),
-    Skip, // skip file in this case
-    Error(String),
 }
 
 // run is bloated right now
@@ -162,18 +74,6 @@ fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config: Arc
         })();
         if let Err(send_err) = tx.send(res) {
             eprintln!("failed to send result back to main: {:?}", send_err);
-        }
-    }
-}
-
-fn print_results(out_map: HashMap<String, Vec<(usize, String)>>, config: Arc<Config>) {
-    for (key, value) in &out_map {
-        for (i, line) in value {
-            if config.line_number {
-                println!("{} - line: {}, {}", key.green(), i, line);
-            } else {
-                println!("{}: {}", key.green(), line);
-            }
         }
     }
 }
@@ -226,9 +126,6 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         for file_response in rx {
             match file_response {
                 FileResult::Match(n, v) => {
-                    // output.output_map.insert(n, v);
-                    // maybe instead of inserting and then printing later, just feed files to print here
-
                     for (key, value) in &v {
                         let config = Arc::clone(&config);
                         print_each_result(config, &n, (*key, value));
@@ -238,20 +135,16 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 FileResult::Skip => {}
             }
         }
-        // print results
-
-        // print_results(output.output_map, config);
     } else {
         let file_contents_bytes = fs::read(&config.file_path)?;
         let file_contents = String::from_utf8_lossy(&file_contents_bytes);
         let output = search(&config, &file_contents);
 
+        let file_name = current.file_name().unwrap().to_str().unwrap();
+
         for (i, line) in &output {
-            if config.line_number {
-                println!("{}: {}", i, line);
-            } else {
-                println!("{}", line);
-            }
+            let config = Arc::clone(&config);
+            print_each_result(config, file_name, (*i, &line.to_string()));
         }
 
         if config.count {
