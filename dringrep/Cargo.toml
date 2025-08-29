@@ -9,4 +9,6 @@ colored = "3.0.0"
 regex = "1.11.1"
 num_cpus = "1.0"
 
+crossbeam = "0.8"
+
 walkdir = "2.5.0"
