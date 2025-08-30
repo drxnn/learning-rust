@@ -25,10 +25,11 @@ mod types;
 mod utils;
 
 pub use types::{Args, Config, FileResult, Pattern, ThreadPool};
-pub use utils::{print_each_result, process_batch};
+pub use utils::{print_each_result, print_results, process_batch};
 
-pub fn count_matches(matches: &Vec<(usize, &str)>) -> usize {
-    // right now only counts number of lines matches, fix so that it counts every occurrence of pattern provided
+pub fn count_matches(matches: &Vec<(usize, String)>) -> usize {
+    // wrong for recursive, fix
+
     return matches.len();
 }
 
