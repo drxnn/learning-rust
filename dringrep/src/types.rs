@@ -48,6 +48,9 @@ pub struct Args {
     pub recursive: bool,
     #[arg(short = 'n', long)]
     pub file_name_if_matches: bool,
+    #[arg(long, value_name = "EXTENSION")]
+    // to use you pass cargo run -- --file-extension .rs
+    pub file_extension: Option<String>,
 }
 impl From<Args> for Config {
     fn from(args: Args) -> Self {
