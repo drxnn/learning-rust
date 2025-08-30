@@ -6,14 +6,13 @@ mod types;
 mod utils;
 
 use dringrep::{
-    Args, Config, FileResult, ThreadPool, count_matches, print_each_result, process_batch, search,
+    Args, Config, FileResult, ThreadPool, count_matches, print_results, process_batch, search,
 };
 
 use std::env;
 use std::error::Error;
 
-use std::fs;
-
+use std::fs::File;
 use std::process;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -40,20 +39,18 @@ fn main() {
 fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let file_counter = Arc::new(Mutex::new(0));
     let current = env::current_dir().unwrap();
+    const BATCH_SIZE: usize = 25;
+    let num_of_cpus = num_cpus::get();
+    let pool_size = if num_of_cpus > 1 { num_of_cpus - 1 } else { 1 };
+    let mut batch = Vec::with_capacity(BATCH_SIZE);
+    let (tx, rx) = mpsc::channel::<FileResult>();
 
     let config = Arc::new(config);
+    let file_counter_clone = Arc::clone(&file_counter);
+    let thread_pool = ThreadPool::new(pool_size, file_counter_clone);
+
     if config.recursive {
-        let num_of_cpus = num_cpus::get();
-        let pool_size = if num_of_cpus > 1 { num_of_cpus - 1 } else { 1 };
         let mut entry: DirEntry;
-        let file_counter_clone = Arc::clone(&file_counter);
-        let thread_pool = ThreadPool::new(pool_size, file_counter_clone);
-
-        const BATCH_SIZE: usize = 25;
-
-        let mut batch = Vec::with_capacity(BATCH_SIZE);
-
-        let (tx, rx) = mpsc::channel::<FileResult>();
 
         for entry_walkdir in WalkDir::new(current) {
             entry = entry_walkdir?;
@@ -71,54 +68,38 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         if !batch.is_empty() {
             let tx = tx.clone();
             let config = Arc::clone(&config);
-            thread_pool.execute(move || process_batch(batch, tx, config));
+            process_batch(batch, tx, config);
         }
-
+        drop(thread_pool);
         drop(tx);
 
-        for file_response in rx {
-            match file_response {
-                FileResult::Match(n, v) => {
-                    for (key, value) in &v {
-                        let config = Arc::clone(&config);
-                        print_each_result(config, &n, (*key, value));
-                    }
-                }
-                FileResult::Error(e) => eprintln!("Error: {}", e),
-                FileResult::Skip => {}
-            }
-        }
+        print_results(rx, config);
     } else {
-        // should be handled by processing function
-        let file_contents_bytes = fs::read(&config.file_path)?;
-        let file_contents = String::from_utf8_lossy(&file_contents_bytes);
-        let output = search(&config, &file_contents);
+        let entry = WalkDir::new(&config.file_path)
+            .max_depth(1)
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap();
 
-        // no need for this below, can just print 1
-        let file_counter_clone = Arc::clone(&file_counter);
-        let mut count = file_counter_clone.lock().unwrap();
-        *count += 1;
+        batch.push(entry);
 
-        let file_name = current.file_name().unwrap().to_str().unwrap();
-
-        for (i, line) in &output {
+        {
+            let tx = tx.clone();
             let config = Arc::clone(&config);
-            print_each_result(config, file_name, (*i, &line.to_string()));
-        }
+            process_batch(batch, tx, config);
+        } // dropping config to use later
+        drop(thread_pool); // dropping thread_pool but still stuck 
+        drop(tx);
+        print_results(rx, config);
 
-        if config.count {
-            let count_matches = count_matches(&output);
-            println!("Number of matched lines found: {count_matches:?}");
-        }
+        println!(" we reach this part of the program");
 
-        if config.file_name_if_matches && output.len() > 0 {
-            println!("File name: {}", config.file_path)
-        }
+        // gets stuck in a loop when only reading 1 file //
+        // no need for this below, can just print 1
+
+        println!("The number of processed files was: 1");
     }
 
-    println!(
-        "the number of processed files was: {}",
-        *file_counter.lock().unwrap()
-    );
     Ok(())
 }
