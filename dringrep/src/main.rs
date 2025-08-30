@@ -81,7 +81,7 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         {
             Some(Ok(e)) => e,
             Some(Err(e)) => {
-                eprint!("Error reading directory: {}", e);
+                eprintln!("Error reading directory: {}", e);
                 return Ok(());
             }
             None => {

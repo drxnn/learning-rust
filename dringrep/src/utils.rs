@@ -6,6 +6,7 @@ use crate::count_matches;
 use crate::{Config, FileResult, search};
 use std::fs;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use std::sync::mpsc;
@@ -54,7 +55,15 @@ pub fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config:
             if std::str::from_utf8(&bytes).is_err() {
                 return FileResult::Skip;
             }
+
             let file_name = entry.file_name();
+            let current_file_extension = Path::new(&file_name)
+                .extension()
+                .map(|extension| extension.to_string_lossy().to_string());
+
+            if config.file_extension.is_some() && config.file_extension != current_file_extension {
+                return FileResult::Skip;
+            }
 
             let file_contents = String::from_utf8_lossy(&bytes);
 
