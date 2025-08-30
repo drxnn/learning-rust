@@ -26,6 +26,7 @@ pub struct Config {
     pub recursive: bool,
     pub file_name_if_matches: bool,
     pub file_extension: Option<String>,
+    pub highlight: bool,
 }
 pub struct Output {
     pub output_map: HashMap<String, Vec<(usize, String)>>,
@@ -51,6 +52,8 @@ pub struct Args {
     #[arg(long, value_name = "EXTENSION")]
     // to use you pass cargo run -- --file-extension .rs
     pub file_extension: Option<String>,
+    #[arg(short = 'h', long)]
+    pub highlight: bool,
 }
 impl From<Args> for Config {
     fn from(args: Args) -> Self {
@@ -58,9 +61,11 @@ impl From<Args> for Config {
 
         let file_path = args.file_path.clone().unwrap_or_default();
 
-        let file_extension = Path::new(&file_path)
-            .extension()
-            .map(|extension| extension.to_string_lossy().to_string());
+        let file_extension = args.file_extension.or_else(|| {
+            Path::new(&file_path)
+                .extension()
+                .map(|ext| ext.to_string_lossy().to_string())
+        });
         let pattern = if args.regex {
             match RegexBuilder::new(&args.query)
                 .case_insensitive(ignore_case)
@@ -89,6 +94,7 @@ impl From<Args> for Config {
             recursive: args.recursive,
             file_name_if_matches: args.file_name_if_matches,
             file_extension,
+            highlight: args.highlight,
         }
     }
 }

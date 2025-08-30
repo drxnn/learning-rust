@@ -15,9 +15,7 @@ lines where pattern occurs not patterns matches -- maybe add later)
 optional: add support for numbers (for example flags that expect numeric values (--max-count 10))
 
 // check out aho_corasick crate for search algo
-// use multiple threads for performance
-// add flag so user can choose how many of the matches to show, example --show=10 would show only 10 matches
-// add flag to put all results into a file called output.txt
+
 */
 
 mod types;
@@ -54,10 +52,15 @@ impl Matcher for Pattern {
     }
 }
 
+// pub fn highlight_match<'a, T: Matcher>(line: &str, pattern: &T) -> &'a str {
+//     // figure out
+// }
+
 fn process_lines<'a, M: Matcher + Sized>(
     query: &M,
     contents: &'a str,
     invert: bool,
+    highlight: bool,
 ) -> Vec<(usize, &'a str)> {
     contents
         .lines()
@@ -74,55 +77,12 @@ fn process_lines<'a, M: Matcher + Sized>(
 }
 pub fn search<'a>(config: &Config, contents: &'a str) -> Vec<(usize, &'a str)> {
     // match config.parttern here
-    process_lines(&config.pattern, contents, config.invert)
+    process_lines(&config.pattern, contents, config.invert, config.highlight)
 }
 
 #[cfg(test)]
 mod tests {
-
-    use super::*;
-
-    // fix texts because now I include number of line in search function
-    //     #[test]
-    //     fn one_result() {
-    //         let query = "duct";
-    //         let contents = "\
-    //  Rust:
-    // safe, fast, productive.
-    //  Pick three.";
-    //         assert_eq!(
-    //             vec!["safe, fast, productive."],
-    //             search(query, contents, false)
-    //         )
-    //     }
-
-    //     #[test]
-    //     fn case_insensitive() {
-    //         let query = "rUsT";
-    //         let contents = "\
-    // Rust:
-    // safe, fast, productive.
-    // Pick three.
-    // Trust me.";
-
-    //         assert_eq!(vec!["Rust:", "Trust me."], search(query, contents, false));
-    //     }
-
-    //     #[test]
-
-    //     fn case_sensitive() {
-    //         let query = "HELLO";
-    //         let contents = "\
-    // HELLO FROM THE OTHER SIDE.
-    // HELLO THERE buDDY
-    // yeah I guess hElLo.
-    // hello hello hello";
-
-    //         assert_eq!(
-    //             vec!["HELLO FROM THE OTHER SIDE.", "HELLO THERE buDDY"],
-    //             search(query, contents, true)
-    //         );
-    //     }
-
-    // add more tests including tests about using multiple flags at the same time
+    // test all flags work correctly
+    // text various regex patterns
+    // text error handling
 }

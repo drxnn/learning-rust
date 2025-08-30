@@ -6,7 +6,6 @@ use crate::count_matches;
 use crate::{Config, FileResult, search};
 use std::fs;
 
-use std::path::Path;
 use std::sync::Arc;
 
 use std::sync::mpsc;
@@ -37,6 +36,9 @@ pub fn print_results(rx: mpsc::Receiver<FileResult>, config: Arc<Config>) {
     }
 }
 
+pub fn normalize_extension(ext: &str) -> &str {
+    ext.strip_prefix('.').unwrap_or(ext)
+}
 pub fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config: Arc<Config>) {
     for entry in batch {
         let res = (|| -> FileResult {
@@ -57,12 +59,20 @@ pub fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config:
             }
 
             let file_name = entry.file_name();
-            let current_file_extension = Path::new(&file_name)
-                .extension()
-                .map(|extension| extension.to_string_lossy().to_string());
 
-            if config.file_extension.is_some() && config.file_extension != current_file_extension {
-                return FileResult::Skip;
+            // only process files that match extension provided
+
+            if let Some(config_ext) = &config.file_extension {
+                let config_ext = normalize_extension(&config_ext);
+                let curr_ext = entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(normalize_extension);
+
+                if curr_ext != Some(config_ext) {
+                    return FileResult::Skip;
+                }
             }
 
             let file_contents = String::from_utf8_lossy(&bytes);
