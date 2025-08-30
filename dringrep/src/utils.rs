@@ -3,7 +3,7 @@ use colored::Colorize;
 extern crate num_cpus;
 
 use crate::count_matches;
-use crate::{Args, Config, FileResult, ThreadPool, search};
+use crate::{Config, FileResult, search};
 use std::fs;
 
 use std::sync::Arc;
@@ -13,7 +13,6 @@ use std::sync::mpsc;
 use walkdir::DirEntry;
 
 pub fn print_results(rx: mpsc::Receiver<FileResult>, config: Arc<Config>) {
-    eprintln!("print_results START");
     for file_response in rx {
         match file_response {
             FileResult::Match(n, v) => {
@@ -35,12 +34,10 @@ pub fn print_results(rx: mpsc::Receiver<FileResult>, config: Arc<Config>) {
             FileResult::Skip => {}
         }
     }
-    eprintln!("print_results END");
 }
 
 pub fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config: Arc<Config>) {
     for entry in batch {
-        eprintln!("process_batch START");
         let res = (|| -> FileResult {
             if !entry.file_type().is_file() {
                 return FileResult::Skip;
@@ -81,7 +78,6 @@ pub fn process_batch(batch: Vec<DirEntry>, tx: mpsc::Sender<FileResult>, config:
         if let Err(send_err) = tx.send(res) {
             eprintln!("failed to send result back to main: {:?}", send_err);
         }
-        eprintln!("process_batch END");
     }
 }
 

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use clap::Parser;
 use regex::{Regex, RegexBuilder};
@@ -24,6 +25,7 @@ pub struct Config {
     pub line_number: bool,
     pub recursive: bool,
     pub file_name_if_matches: bool,
+    pub file_extension: Option<String>,
 }
 pub struct Output {
     pub output_map: HashMap<String, Vec<(usize, String)>>,
@@ -51,6 +53,11 @@ impl From<Args> for Config {
     fn from(args: Args) -> Self {
         let ignore_case = args.ignore_case || env::var("IGNORE_CASE").is_ok();
 
+        let file_path = args.file_path.clone().unwrap_or_default();
+
+        let file_extension = Path::new(&file_path)
+            .extension()
+            .map(|extension| extension.to_string_lossy().to_string());
         let pattern = if args.regex {
             match RegexBuilder::new(&args.query)
                 .case_insensitive(ignore_case)
@@ -71,13 +78,14 @@ impl From<Args> for Config {
 
         Config {
             pattern,
-            file_path: args.file_path.unwrap_or("".to_string()),
+            file_path,
             ignore_case,
             invert: args.invert,
             count: args.count,
             line_number: args.line_number,
             recursive: args.recursive,
             file_name_if_matches: args.file_name_if_matches,
+            file_extension,
         }
     }
 }
