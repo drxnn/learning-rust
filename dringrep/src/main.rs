@@ -12,7 +12,6 @@ use dringrep::{
 use std::env;
 use std::error::Error;
 
-use std::fs::File;
 use std::process;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -75,12 +74,21 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
         print_results(rx, config);
     } else {
-        let entry = WalkDir::new(&config.file_path)
+        let entry = match WalkDir::new(&config.file_path)
             .max_depth(1)
             .into_iter()
             .next()
-            .unwrap()
-            .unwrap();
+        {
+            Some(Ok(e)) => e,
+            Some(Err(e)) => {
+                eprint!("Error reading directory: {}", e);
+                return Ok(());
+            }
+            None => {
+                eprintln!("Entry was not found in current directory");
+                return Ok(());
+            }
+        };
 
         batch.push(entry);
 
@@ -92,11 +100,6 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         drop(thread_pool); // dropping thread_pool but still stuck 
         drop(tx);
         print_results(rx, config);
-
-        println!(" we reach this part of the program");
-
-        // gets stuck in a loop when only reading 1 file //
-        // no need for this below, can just print 1
 
         println!("The number of processed files was: 1");
     }

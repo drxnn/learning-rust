@@ -11,6 +11,7 @@ lines where pattern occurs not patterns matches -- maybe add later)
 7) add highlighting support, with -h flag -> use colored crates
 8) add option to include a file extension for files you want to check, or you dont want to check.
 
+
 optional: add support for numbers (for example flags that expect numeric values (--max-count 10))
 
 // check out aho_corasick crate for search algo
@@ -18,8 +19,6 @@ optional: add support for numbers (for example flags that expect numeric values 
 // add flag so user can choose how many of the matches to show, example --show=10 would show only 10 matches
 // add flag to put all results into a file called output.txt
 */
-
-// use colored::Colorize;
 
 mod types;
 mod utils;
