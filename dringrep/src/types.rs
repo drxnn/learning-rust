@@ -16,6 +16,22 @@ pub enum Pattern {
     Regex(Regex),
 }
 
+// regex len needs some solution
+pub trait PatternLen {
+    fn fixed_len(&self) -> Option<usize>;
+}
+impl PatternLen for Pattern {
+    fn fixed_len(&self) -> Option<usize> {
+        match self {
+            Pattern::Literal {
+                text,
+                case_insensitive,
+            } => Some(text.len()),
+            _ => None,
+        }
+    }
+}
+
 pub struct Config {
     pub file_path: String,
     pub pattern: Pattern,
@@ -52,7 +68,7 @@ pub struct Args {
     #[arg(long, value_name = "EXTENSION")]
     // to use you pass cargo run -- --file-extension .rs
     pub file_extension: Option<String>,
-    #[arg(short = 'h', long)]
+    #[arg(long = "highlight")]
     pub highlight: bool,
 }
 impl From<Args> for Config {
