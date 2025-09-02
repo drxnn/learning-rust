@@ -6,9 +6,9 @@ lines where pattern occurs not patterns matches -- maybe add later)
 3) print just the file name that contains at least 1 match // done
 
 4) add invert match(printing lines that do not match)//  done
-5) add regex support with regex-crate
-6) add recursive with walkdir
-7) add highlighting support, with -h flag -> use colored crates
+5) add regex support with regex-crate done
+6) add recursive with walkdir done
+7) add highlighting support, with -h flag -> use colored crates half done
 8) add option to include a file extension for files you want to check, or you dont want to check.
 
 
@@ -55,57 +55,88 @@ impl Matcher for Pattern {
     }
 }
 
-pub fn highlight_match<'a, T: Matcher + PatternLen>(line: &str, pattern: &T) -> String {
+pub fn highlight_match<'a>(line: &str, pattern: &Pattern) -> String {
     let mut highlighted_string = String::from("");
 
     let mut matched_indices: Vec<(usize, usize)> = Vec::new();
 
     let pat_len = pattern.fixed_len();
 
-    for (start_index, _char) in line.char_indices() {
-        //
-        for (end_index, _char) in line.char_indices().skip_while(|(i, c)| *i <= start_index)
-        /*this is done because safety in regards to byte indices for certain chars */
-        {
-            // doesnt account for regex, figure out
-            if end_index - start_index > pat_len.unwrap() {
-                break;
-            }
-            //hee hee he hehehehhee
+    match pattern {
+        Pattern::Literal {
+            text,
+            case_insensitive,
+        } => {
+            for (start_index, _char) in line.char_indices() {
+                //
+                for (end_index, _char) in
+                    line.char_indices().skip_while(|(i, _c)| *i <= start_index)
+                /*this is done because safety in regards to byte indices for certain chars */
+                {
+                    // doesnt account for regex, figure out
+                    if end_index - start_index > pat_len.unwrap() {
+                        break;
+                    }
 
-            let sub_string = &line[start_index..end_index];
+                    let sub_string = &line[start_index..end_index];
 
-            if pattern.matches_query(sub_string) {
-                matched_indices.push((start_index, end_index));
+                    if pattern.matches_query(sub_string) {
+                        matched_indices.push((start_index, end_index));
+                    }
+                }
             }
+
+            for (index, char) in line.char_indices() {
+                let inside_match = matched_indices
+                    .iter()
+                    .any(|(s, e)| index >= *s && index < *e);
+
+                if inside_match {
+                    highlighted_string
+                        .push_str(&char.to_string().red().underline().bold().to_string());
+                } else {
+                    highlighted_string.push(char);
+                }
+            }
+
+            highlighted_string
+        }
+        Pattern::Regex(re) => {
+            // use captures to highlight
+            // let mut out = Vec::new();
+            // maybe add flag to include overlaps. Example: "ana" is twice in "banana" but the code below will only highlight the first match
+            let mut pos = 0usize;
+            let matches: Vec<(usize, usize)> =
+                re.find_iter(line).map(|x| (x.start(), x.end())).collect();
+
+            for (start_of, end_of) in &matches {
+                println!("first item: {}, second item: {}", start_of, end_of);
+            }
+            for (index, char) in line.char_indices() {
+                let inside_match = matches.iter().any(|(s, e)| index >= *s && index < *e);
+
+                if inside_match {
+                    highlighted_string
+                        .push_str(&char.to_string().red().underline().bold().to_string());
+                } else {
+                    highlighted_string.push(char);
+                }
+            }
+
+            highlighted_string
         }
     }
-
-    println!("line is: {}", line);
-
-    for (index, char) in line.char_indices() {
-        {
-            let inside_match = matched_indices
-                .iter()
-                .any(|(s, e)| index >= *s && index < *e);
-
-            if inside_match {
-                highlighted_string.push_str(&char.to_string().red().underline().bold().to_string());
-            } else {
-                highlighted_string.push(char);
-            }
-        }
-    }
-
-    highlighted_string
 }
 
-fn process_lines<'a, M: Matcher + Sized + PatternLen>(
-    query: &M,
+fn process_lines<'a>(
+    query: &Pattern,
     contents: &'a str,
     invert: bool,
     highlight: bool,
 ) -> Vec<(usize, String)> {
+    // performance is absolutely horrible below matches_query is O(n*m) and its inside the filter_map.
+    // highlight_match has two nested loops and its called inside filter_map
+    // change logic
     contents
         .lines()
         .enumerate()
