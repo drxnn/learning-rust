@@ -10,10 +10,15 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 pub enum Pattern {
     Literal {
-        text: String,
+        pattern: Vec<String>,
         case_insensitive: bool,
     },
     Regex(Regex),
+    MultipleLiteral {
+        pattern: Vec<String>,
+
+        case_insensitive: bool,
+    },
 }
 
 // regex len needs some solution
@@ -24,9 +29,10 @@ impl PatternLen for Pattern {
     fn fixed_len(&self) -> Option<usize> {
         match self {
             Pattern::Literal {
-                text,
+                pattern,
                 case_insensitive,
-            } => Some(text.len()),
+            } => Some(pattern.first().unwrap().len()),
+
             _ => None,
         }
     }
@@ -49,13 +55,20 @@ pub struct Output {
 }
 #[derive(Parser)]
 pub struct Args {
-    pub query: String,
-    pub file_path: Option<String>,
+    #[arg(long)]
+    pub query: Option<String>,
+    #[arg(long, num_args = 1.., conflicts_with = "regex")]
+    pub multiple: Vec<String>,
+
     #[arg(long = "icase")]
     pub ignore_case: bool,
+
+    #[arg(short = 'F', long, value_name = "FILE_PATH")]
+    pub file_path: Option<String>,
+
     #[arg(short, long)]
     pub invert: bool,
-    #[arg(short = 'E', long)]
+    #[arg(short = 'E', long, conflicts_with = "multiple")]
     pub regex: bool,
     #[arg(short = 'c', long)]
     pub count: bool,
@@ -75,29 +88,51 @@ impl From<Args> for Config {
     fn from(args: Args) -> Self {
         let ignore_case = args.ignore_case || env::var("IGNORE_CASE").is_ok();
 
-        let file_path = args.file_path.clone().unwrap_or_default();
+        let file_path = match args.file_path {
+            Some(fp) => fp,
+            None => {
+                eprintln!("Error: no file path provided.");
+                std::process::exit(1);
+            }
+        };
 
         let file_extension = args.file_extension.or_else(|| {
             Path::new(&file_path)
                 .extension()
                 .map(|ext| ext.to_string_lossy().to_string())
         });
+
         let pattern = if args.regex {
-            match RegexBuilder::new(&args.query)
-                .case_insensitive(ignore_case)
-                .build()
-            {
+            let q = if let Some(qs) = args.query.clone() {
+                qs
+            } else {
+                args.multiple.first().cloned().unwrap_or_else(|| {
+                    eprintln!("--regex requires a query string (use --query or --multiple).");
+                    std::process::exit(1);
+                })
+            };
+            match RegexBuilder::new(&q).case_insensitive(ignore_case).build() {
                 Ok(re) => Pattern::Regex(re),
                 Err(e) => {
-                    eprintln!("Invalid regex `{}`: {}", args.query, e);
+                    eprintln!("Invalid regex `{}`: {}", q, e);
                     process::exit(1);
                 }
             }
-        } else {
-            Pattern::Literal {
-                text: args.query.clone(),
+        } else if !args.multiple.is_empty() {
+            Pattern::MultipleLiteral {
+                pattern: args.multiple.clone(),
                 case_insensitive: ignore_case,
             }
+        } else if let Some(q) = args.query {
+            Pattern::Literal {
+                pattern: vec![q],
+                case_insensitive: ignore_case,
+            }
+        } else {
+            eprintln!(
+                "Error: no query provided. Provide positional argument(1) for query <Q> or --multiple <Q>."
+            );
+            process::exit(1);
         };
 
         Config {

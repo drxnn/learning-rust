@@ -23,6 +23,7 @@ use walkdir::WalkDir;
 
 fn main() {
     let args = Args::parse();
+
     let config: Config = args.into();
     let start = Instant::now();
 

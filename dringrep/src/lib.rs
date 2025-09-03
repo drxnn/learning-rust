@@ -14,13 +14,14 @@ lines where pattern occurs not patterns matches -- maybe add later)
 
 optional: add support for numbers (for example flags that expect numeric values (--max-count 10))
 
-// check out aho_corasick crate for search algo
+// check out aho_corasick crate for search algo for multiple string literals
 
 */
 
 mod types;
 mod utils;
 
+use aho_corasick::AhoCorasick;
 use colored::Colorize;
 pub use types::{Args, Config, FileResult, Pattern, ThreadPool};
 pub use utils::{print_each_result, print_results, process_batch};
@@ -40,64 +41,87 @@ pub trait Matcher {
 impl Matcher for Pattern {
     fn matches_query(&self, text: &str) -> bool {
         match self {
+            Pattern::Regex(re) => re.is_match(text),
             Pattern::Literal {
-                text: pattern,
+                pattern,
                 case_insensitive,
             } => {
                 if *case_insensitive {
-                    text.to_lowercase().contains(&pattern.to_lowercase())
+                    text.to_lowercase()
+                        .contains(&pattern.first().unwrap().to_lowercase())
                 } else {
-                    text.contains(pattern)
+                    text.contains(pattern.first().unwrap())
                 }
             }
-            Pattern::Regex(re) => re.is_match(text),
+            // check if correct later
+            Pattern::MultipleLiteral {
+                pattern,
+                case_insensitive,
+            } => {
+                if *case_insensitive {
+                    pattern
+                        .iter()
+                        .any(|p| text.to_lowercase().contains(&p.to_lowercase()))
+                } else {
+                    pattern.iter().any(|p| text.contains(p))
+                }
+            }
         }
     }
 }
 
-pub fn highlight_match<'a>(line: &str, pattern: &Pattern) -> String {
+pub fn highlight_match(line: &str, pat: &Pattern) -> String {
     let mut highlighted_string = String::from("");
 
     let mut matched_indices: Vec<(usize, usize)> = Vec::new();
 
-    let pat_len = pattern.fixed_len();
+    let mut pat_len: usize = 0;
 
-    match pattern {
+    match pat {
         Pattern::Literal {
-            text,
+            pattern,
+            case_insensitive,
+        }
+        | Pattern::MultipleLiteral {
+            pattern,
             case_insensitive,
         } => {
-            for (start_index, _char) in line.char_indices() {
-                //
-                for (end_index, _char) in
-                    line.char_indices().skip_while(|(i, _c)| *i <= start_index)
-                /*this is done because safety in regards to byte indices for certain chars */
-                {
-                    // doesnt account for regex, figure out
-                    if end_index - start_index > pat_len.unwrap() {
-                        break;
-                    }
+            // let ac = AhoCorasick::new(patterns).unwrap();
 
-                    let sub_string = &line[start_index..end_index];
+            pattern.iter().for_each(|p| {
+                pat_len = p.len();
+                for (start_index, _char) in line.char_indices() {
+                    //
+                    for (end_index, _char) in
+                        line.char_indices().skip_while(|(i, _c)| *i <= start_index)
+                    /*this is done because safety in regards to byte indices for certain chars */
+                    {
+                        // doesnt account for regex, figure out
+                        if end_index - start_index > pat_len {
+                            break;
+                        }
 
-                    if pattern.matches_query(sub_string) {
-                        matched_indices.push((start_index, end_index));
+                        let sub_string = &line[start_index..end_index];
+
+                        if pat.matches_query(sub_string) {
+                            matched_indices.push((start_index, end_index));
+                        }
                     }
                 }
-            }
 
-            for (index, char) in line.char_indices() {
-                let inside_match = matched_indices
-                    .iter()
-                    .any(|(s, e)| index >= *s && index < *e);
+                for (index, char) in line.char_indices() {
+                    let inside_match = matched_indices
+                        .iter()
+                        .any(|(s, e)| index >= *s && index < *e);
 
-                if inside_match {
-                    highlighted_string
-                        .push_str(&char.to_string().red().underline().bold().to_string());
-                } else {
-                    highlighted_string.push(char);
+                    if inside_match {
+                        highlighted_string
+                            .push_str(&char.to_string().red().underline().bold().to_string());
+                    } else {
+                        highlighted_string.push(char);
+                    }
                 }
-            }
+            });
 
             highlighted_string
         }
@@ -105,13 +129,10 @@ pub fn highlight_match<'a>(line: &str, pattern: &Pattern) -> String {
             // use captures to highlight
             // let mut out = Vec::new();
             // maybe add flag to include overlaps. Example: "ana" is twice in "banana" but the code below will only highlight the first match
-            let mut pos = 0usize;
+
             let matches: Vec<(usize, usize)> =
                 re.find_iter(line).map(|x| (x.start(), x.end())).collect();
 
-            for (start_of, end_of) in &matches {
-                println!("first item: {}, second item: {}", start_of, end_of);
-            }
             for (index, char) in line.char_indices() {
                 let inside_match = matches.iter().any(|(s, e)| index >= *s && index < *e);
 
