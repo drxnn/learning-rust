@@ -147,7 +147,7 @@ pub fn process_batch(
 
             thread_pool.execute(move || {
                 let file_contents = String::from_utf8_lossy(&buffer);
-                let mut temp = search(&config, &file_contents);
+                let temp = search(&config, &file_contents);
                 // processed_bytes = processed_bytes.saturating_add(buffer.len() as u64); // gets dropped, fix later
 
                 if !temp.is_empty() {

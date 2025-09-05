@@ -149,6 +149,7 @@ impl Worker {
     ) -> Self {
         let thread = thread::spawn(move || {
             loop {
+                println!("job being handled by worker with ID: {}", id);
                 let job = {
                     let recv_lock = receiver.lock().unwrap();
                     recv_lock.recv()

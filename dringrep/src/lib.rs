@@ -101,16 +101,17 @@ pub fn highlight_match(line: &str, pat: &Pattern) -> String {
             let matches: Vec<(usize, usize)> =
                 ac.find_iter(line).map(|m| (m.start(), m.end())).collect();
 
-            for (index, char) in line.char_indices() {
-                let inside_match = matches.iter().any(|(s, e)| index >= *s && index < *e);
+            // matches right now is [(0,3), (5,8), (24,27)]
 
-                if inside_match {
-                    highlighted_string
-                        .push_str(&char.to_string().red().underline().bold().to_string());
-                } else {
-                    highlighted_string.push(char);
-                }
+            let mut last = 0;
+            for (start, end) in matches {
+                highlighted_string.push_str(&line[last..start]);
+
+                highlighted_string.push_str(&line[start..end].red().underline().bold().to_string());
+
+                last = end;
             }
+            highlighted_string.push_str(&line[last..]);
 
             highlighted_string
         }
