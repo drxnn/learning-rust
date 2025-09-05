@@ -21,12 +21,12 @@ optional: add support for numbers (for example flags that expect numeric values 
 mod types;
 mod utils;
 
-use aho_corasick::AhoCorasick;
+use std::borrow::Cow;
+
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use colored::Colorize;
 pub use types::{Args, Config, FileResult, Pattern, ThreadPool};
 pub use utils::{print_each_result, print_results, process_batch};
-
-use crate::types::PatternLen;
 
 pub fn count_matches(matches: &Vec<(usize, String)>) -> usize {
     // wrong for recursive, fix
@@ -58,13 +58,19 @@ impl Matcher for Pattern {
                 pattern,
                 case_insensitive,
             } => {
-                if *case_insensitive {
-                    pattern
-                        .iter()
-                        .any(|p| text.to_lowercase().contains(&p.to_lowercase()))
+                let lowered_patterns: Vec<String> =
+                    pattern.iter().map(|s| s.to_lowercase()).collect();
+                let pattern_refs: Vec<&str> = lowered_patterns.iter().map(|s| s.as_str()).collect();
+
+                let ac = if *case_insensitive {
+                    AhoCorasickBuilder::new()
+                        .build(&pattern_refs)
+                        .expect("error")
                 } else {
-                    pattern.iter().any(|p| text.contains(p))
-                }
+                    let pattern_refs: Vec<&str> = pattern.iter().map(|s| s.as_str()).collect();
+                    AhoCorasick::new(&pattern_refs).expect("error")
+                };
+                ac.is_match(text)
             }
         }
     }
@@ -72,10 +78,6 @@ impl Matcher for Pattern {
 
 pub fn highlight_match(line: &str, pat: &Pattern) -> String {
     let mut highlighted_string = String::from("");
-
-    let mut matched_indices: Vec<(usize, usize)> = Vec::new();
-
-    let mut pat_len: usize = 0;
 
     match pat {
         Pattern::Literal {
@@ -86,50 +88,33 @@ pub fn highlight_match(line: &str, pat: &Pattern) -> String {
             pattern,
             case_insensitive,
         } => {
-            // let ac = AhoCorasick::new(patterns).unwrap();
+            let pattern_refs: Vec<&str> = pattern.iter().map(|s| s.as_str()).collect();
+            let ac = if *case_insensitive {
+                AhoCorasickBuilder::new()
+                    .ascii_case_insensitive(true)
+                    .build(&pattern_refs)
+                    .unwrap()
+            } else {
+                AhoCorasick::new(&pattern_refs).unwrap()
+            };
 
-            pattern.iter().for_each(|p| {
-                pat_len = p.len();
-                for (start_index, _char) in line.char_indices() {
-                    //
-                    for (end_index, _char) in
-                        line.char_indices().skip_while(|(i, _c)| *i <= start_index)
-                    /*this is done because safety in regards to byte indices for certain chars */
-                    {
-                        // doesnt account for regex, figure out
-                        if end_index - start_index > pat_len {
-                            break;
-                        }
+            let matches: Vec<(usize, usize)> =
+                ac.find_iter(line).map(|m| (m.start(), m.end())).collect();
 
-                        let sub_string = &line[start_index..end_index];
+            for (index, char) in line.char_indices() {
+                let inside_match = matches.iter().any(|(s, e)| index >= *s && index < *e);
 
-                        if pat.matches_query(sub_string) {
-                            matched_indices.push((start_index, end_index));
-                        }
-                    }
+                if inside_match {
+                    highlighted_string
+                        .push_str(&char.to_string().red().underline().bold().to_string());
+                } else {
+                    highlighted_string.push(char);
                 }
-
-                for (index, char) in line.char_indices() {
-                    let inside_match = matched_indices
-                        .iter()
-                        .any(|(s, e)| index >= *s && index < *e);
-
-                    if inside_match {
-                        highlighted_string
-                            .push_str(&char.to_string().red().underline().bold().to_string());
-                    } else {
-                        highlighted_string.push(char);
-                    }
-                }
-            });
+            }
 
             highlighted_string
         }
         Pattern::Regex(re) => {
-            // use captures to highlight
-            // let mut out = Vec::new();
-            // maybe add flag to include overlaps. Example: "ana" is twice in "banana" but the code below will only highlight the first match
-
             let matches: Vec<(usize, usize)> =
                 re.find_iter(line).map(|x| (x.start(), x.end())).collect();
 
@@ -154,10 +139,11 @@ fn process_lines<'a>(
     contents: &'a str,
     invert: bool,
     highlight: bool,
-) -> Vec<(usize, String)> {
+) -> Vec<(usize, Cow<'a, str>)> {
     // performance is absolutely horrible below matches_query is O(n*m) and its inside the filter_map.
     // highlight_match has two nested loops and its called inside filter_map
     // change logic
+
     contents
         .lines()
         .enumerate()
@@ -165,18 +151,17 @@ fn process_lines<'a>(
             let matched = query.matches_query(line);
             if matched ^ invert {
                 if highlight {
-                    return Some((i + 1, highlight_match(line, query)));
+                    return Some((i + 1, Cow::Owned(highlight_match(line, query))));
                 } else {
-                    return Some((i + 1, line.to_string()));
+                    return Some((i + 1, Cow::Borrowed(line)));
                 }
             } else {
                 None
             }
         })
-        .collect::<Vec<(usize, String)>>()
+        .collect()
 }
-pub fn search<'a>(config: &Config, contents: &'a str) -> Vec<(usize, String)> {
-    // match config.parttern here
+pub fn search<'a>(config: &Config, contents: &'a str) -> Vec<(usize, Cow<'a, str>)> {
     process_lines(&config.pattern, contents, config.invert, config.highlight)
 }
 

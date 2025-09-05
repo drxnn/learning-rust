@@ -12,6 +12,10 @@ use dringrep::{
 use std::env;
 use std::error::Error;
 
+use std::fs;
+use std::fs::File;
+use std::io;
+use std::io::Write;
 use std::process;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -21,7 +25,7 @@ use std::time::Instant;
 use walkdir::DirEntry;
 use walkdir::WalkDir;
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     let config: Config = args.into();
@@ -34,12 +38,14 @@ fn main() {
     }
     let duration = start.elapsed();
     println!("Finished in {:?}", duration);
+
+    Ok(())
 }
 
 fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let file_counter = Arc::new(Mutex::new(0));
     let current = env::current_dir().unwrap();
-    const BATCH_SIZE: usize = 25;
+    const BATCH_SIZE: usize = 128;
     let num_of_cpus = num_cpus::get();
     let pool_size = if num_of_cpus > 1 { num_of_cpus - 1 } else { 1 };
     let mut batch = Vec::with_capacity(BATCH_SIZE);
@@ -54,13 +60,15 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
         for entry_walkdir in WalkDir::new(current) {
             entry = entry_walkdir?;
-            let tx = tx.clone();
-            let config = Arc::clone(&config);
 
             batch.push(entry);
 
             if batch.len() == BATCH_SIZE {
-                thread_pool.execute(move || process_batch(batch, tx, config));
+                let config = Arc::clone(&config);
+                let tx = tx.clone();
+                thread_pool.execute(move || {
+                    process_batch(batch, tx, config, false);
+                });
                 batch = Vec::with_capacity(BATCH_SIZE); // reset batch
             }
         }
@@ -68,13 +76,17 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
         if !batch.is_empty() {
             let tx = tx.clone();
             let config = Arc::clone(&config);
-            process_batch(batch, tx, config);
+            thread_pool.execute(move || {
+                process_batch(batch, tx, config, false);
+            });
         }
-        drop(thread_pool);
         drop(tx);
+        drop(thread_pool);
 
         print_results(rx, config);
     } else {
+        // currently dont use threads for a single file , maybe add ?
+
         let entry = match WalkDir::new(&config.file_path)
             .max_depth(1)
             .into_iter()
@@ -91,15 +103,20 @@ fn run(config: Config) -> Result<(), Box<dyn Error>> {
             }
         };
 
+        // figure out a way to break it into chunks and feed it to the batch
+        // issue is that batch only takes directories right now
+        // how can I give batch only a part of the files contents?
+        // let contents = Arc::new()
+
         batch.push(entry);
 
         {
             let tx = tx.clone();
             let config = Arc::clone(&config);
-            process_batch(batch, tx, config);
+            process_batch(batch, tx, config, true);
         } // dropping config to use later
-        drop(thread_pool); // dropping thread_pool but still stuck 
         drop(tx);
+        drop(thread_pool);
         print_results(rx, config);
 
         println!("The number of processed files was: 1");

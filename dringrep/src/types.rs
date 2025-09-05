@@ -22,21 +22,6 @@ pub enum Pattern {
 }
 
 // regex len needs some solution
-pub trait PatternLen {
-    fn fixed_len(&self) -> Option<usize>;
-}
-impl PatternLen for Pattern {
-    fn fixed_len(&self) -> Option<usize> {
-        match self {
-            Pattern::Literal {
-                pattern,
-                case_insensitive,
-            } => Some(pattern.first().unwrap().len()),
-
-            _ => None,
-        }
-    }
-}
 
 pub struct Config {
     pub file_path: String,
@@ -90,10 +75,7 @@ impl From<Args> for Config {
 
         let file_path = match args.file_path {
             Some(fp) => fp,
-            None => {
-                eprintln!("Error: no file path provided.");
-                std::process::exit(1);
-            }
+            _ => "".to_string(),
         };
 
         let file_extension = args.file_extension.or_else(|| {
@@ -243,4 +225,9 @@ pub enum FileResult {
     Match(String, Vec<(usize, String)>),
     Skip,
     Error(String),
+    BatchTiming {
+        processed_files: usize,
+        processed_bytes: u64,
+        elapsed_ns: u128,
+    },
 }
