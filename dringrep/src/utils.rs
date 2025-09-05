@@ -107,7 +107,14 @@ pub fn process_batch(
     let mut processed_files: usize = 0;
     if single_file {
         let entry = batch.first().unwrap();
-        let pool_size = num_cpus::get() - 1;
+        // if !entry.file_type().is_file() {
+        //     return FileResult::Skip;
+        // }
+        let mut pool_size = num_cpus::get();
+        pool_size = pool_size.saturating_sub(1);
+        if pool_size == 0 {
+            pool_size = 1;
+        }
         let mut chunks = Vec::new();
         // need to do this for now since threadpool expects it
         let file_counter = Arc::new(Mutex::new(0));
@@ -117,6 +124,7 @@ pub fn process_batch(
         let file_size_bytes = metadata.ok().unwrap().len();
         let chunk_size = (file_size_bytes + pool_size as u64 - 1) / pool_size as u64;
         let mut start = 0;
+        processed_files = processed_files.saturating_add(1);
 
         for _ in 0..pool_size {
             let end = std::cmp::min(start + chunk_size, file_size_bytes);
@@ -136,18 +144,26 @@ pub fn process_batch(
             let length = end - start;
             let mut buffer = vec![0; length as usize];
             f.read_exact(&mut buffer)?;
-            // buffer has our bytes so lets get our contents from it;
-
-            // f.read_exact(&mut buffer)?; // will read from seek poisiton to the size of buffer
-
-            // find way to rebuild or return every match in order
 
             thread_pool.execute(move || {
                 let file_contents = String::from_utf8_lossy(&buffer);
-                search(&config, &file_contents);
+                let mut temp = search(&config, &file_contents);
+                // processed_bytes = processed_bytes.saturating_add(buffer.len() as u64); // gets dropped, fix later
+
+                if !temp.is_empty() {
+                    let owned_temp: Vec<(usize, String)> = temp
+                        .into_iter()
+                        .map(|(idx, s)| (idx, s.to_string()))
+                        .collect();
+
+                    if let Err(e) = tx.send(FileResult::Match(config.file_path.clone(), owned_temp))
+                    {
+                        eprintln!("failed to send chunk result: {:?}", e);
+                    }
+                }
             })
         }
-        // for example if we have 100 bytes and 10 cores
+        // for example if wv have 100 bytes and 10 cores
         // chunks holds [(0,10), (10-20) .. etc]
         //
     } else {
