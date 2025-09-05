@@ -42,36 +42,9 @@ impl Matcher for Pattern {
     fn matches_query(&self, text: &str) -> bool {
         match self {
             Pattern::Regex(re) => re.is_match(text),
-            Pattern::Literal {
-                pattern,
-                case_insensitive,
-            } => {
-                if *case_insensitive {
-                    text.to_lowercase()
-                        .contains(&pattern.first().unwrap().to_lowercase())
-                } else {
-                    text.contains(pattern.first().unwrap())
-                }
-            }
+            Pattern::Literal { pattern, .. } => pattern.is_match(text),
             // check if correct later
-            Pattern::MultipleLiteral {
-                pattern,
-                case_insensitive,
-            } => {
-                let lowered_patterns: Vec<String> =
-                    pattern.iter().map(|s| s.to_lowercase()).collect();
-                let pattern_refs: Vec<&str> = lowered_patterns.iter().map(|s| s.as_str()).collect();
-
-                let ac = if *case_insensitive {
-                    AhoCorasickBuilder::new()
-                        .build(&pattern_refs)
-                        .expect("error")
-                } else {
-                    let pattern_refs: Vec<&str> = pattern.iter().map(|s| s.as_str()).collect();
-                    AhoCorasick::new(&pattern_refs).expect("error")
-                };
-                ac.is_match(text)
-            }
+            Pattern::MultipleLiteral { pattern, .. } => pattern.is_match(text),
         }
     }
 }
@@ -88,18 +61,10 @@ pub fn highlight_match(line: &str, pat: &Pattern) -> String {
             pattern,
             case_insensitive,
         } => {
-            let pattern_refs: Vec<&str> = pattern.iter().map(|s| s.as_str()).collect();
-            let ac = if *case_insensitive {
-                AhoCorasickBuilder::new()
-                    .ascii_case_insensitive(true)
-                    .build(&pattern_refs)
-                    .unwrap()
-            } else {
-                AhoCorasick::new(&pattern_refs).unwrap()
-            };
-
-            let matches: Vec<(usize, usize)> =
-                ac.find_iter(line).map(|m| (m.start(), m.end())).collect();
+            let matches: Vec<(usize, usize)> = pattern
+                .find_iter(line)
+                .map(|m| (m.start(), m.end()))
+                .collect();
 
             // matches right now is [(0,3), (5,8), (24,27)]
 
@@ -141,10 +106,6 @@ fn process_lines<'a>(
     invert: bool,
     highlight: bool,
 ) -> Vec<(usize, Cow<'a, str>)> {
-    // performance is absolutely horrible below matches_query is O(n*m) and its inside the filter_map.
-    // highlight_match has two nested loops and its called inside filter_map
-    // change logic
-
     contents
         .lines()
         .enumerate()

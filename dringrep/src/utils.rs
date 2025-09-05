@@ -10,19 +10,12 @@ use std::io::SeekFrom;
 
 use std::io::{Read, Seek};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::time::Instant;
 
 use std::sync::mpsc;
 
 use walkdir::DirEntry;
 
 pub fn print_results(rx: mpsc::Receiver<FileResult>, config: Arc<Config>) {
-    let mut total_batches: usize = 0;
-    let mut total_files: usize = 0;
-    let mut total_bytes: u128 = 0;
-    let mut total_ns: u128 = 0;
-    let mut total_matches: usize = 0;
     for file_response in rx {
         match file_response {
             FileResult::Match(n, v) => {
@@ -42,53 +35,6 @@ pub fn print_results(rx: mpsc::Receiver<FileResult>, config: Arc<Config>) {
             }
             FileResult::Error(e) => eprintln!("Error: {}", e),
             FileResult::Skip => {}
-            FileResult::BatchTiming {
-                processed_files,
-                processed_bytes,
-                elapsed_ns,
-            } => {
-                total_batches += 1;
-                total_files += processed_files;
-                total_bytes += processed_bytes as u128;
-                total_ns += elapsed_ns;
-            }
-        }
-    }
-    if total_ns == 0 {
-        eprintln!("No timing information received from workers.");
-        return;
-    }
-    let total_ns_u64 = if total_ns > (u128::from(u64::MAX)) {
-        u64::MAX
-    } else {
-        total_ns as u64
-    };
-    let total_dur = Duration::from_nanos(total_ns_u64);
-    eprintln!(
-        "Total processing time (sum of worker batch times): {:?}",
-        total_dur
-    );
-    if total_batches > 0 {
-        let avg_ns = total_ns / total_batches as u128;
-        let avg_ns_u64 = if avg_ns > (u128::from(u64::MAX)) {
-            u64::MAX
-        } else {
-            avg_ns as u64
-        };
-        eprintln!("Avg per-batch time: {:?}", Duration::from_nanos(avg_ns_u64));
-    }
-    if total_bytes > 0 {
-        let total_secs_f = (total_ns as f64) / 1.0e9f64;
-        if total_secs_f > 0.0 {
-            let mb = (total_bytes as f64) / (1024.0 * 1024.0);
-            let mbps = mb / total_secs_f;
-            eprintln!(
-                "Total bytes processed by workers: {} (~{:.2} MB)",
-                total_bytes, mb
-            );
-            eprintln!("Approx throughput (workers): {:.2} MB/s", mbps);
-        } else {
-            eprintln!("Total bytes processed: {} bytes", total_bytes);
         }
     }
 }
@@ -102,21 +48,16 @@ pub fn process_batch(
     config: Arc<Config>,
     single_file: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let batch_start = Instant::now();
-    let mut processed_bytes: u64 = 0;
-    let mut processed_files: usize = 0;
     if single_file {
         let entry = batch.first().unwrap();
-        // if !entry.file_type().is_file() {
-        //     return FileResult::Skip;
-        // }
+
         let mut pool_size = num_cpus::get();
         pool_size = pool_size.saturating_sub(1);
         if pool_size == 0 {
             pool_size = 1;
         }
         let mut chunks = Vec::new();
-        // need to do this for now since threadpool expects it
+
         let file_counter = Arc::new(Mutex::new(0));
         let thread_pool = ThreadPool::new(pool_size, file_counter);
 
@@ -124,7 +65,6 @@ pub fn process_batch(
         let file_size_bytes = metadata.ok().unwrap().len();
         let chunk_size = (file_size_bytes + pool_size as u64 - 1) / pool_size as u64;
         let mut start = 0;
-        processed_files = processed_files.saturating_add(1);
 
         for _ in 0..pool_size {
             let end = std::cmp::min(start + chunk_size, file_size_bytes);
@@ -148,7 +88,6 @@ pub fn process_batch(
             thread_pool.execute(move || {
                 let file_contents = String::from_utf8_lossy(&buffer);
                 let temp = search(&config, &file_contents);
-                // processed_bytes = processed_bytes.saturating_add(buffer.len() as u64); // gets dropped, fix later
 
                 if !temp.is_empty() {
                     let owned_temp: Vec<(usize, String)> = temp
@@ -163,9 +102,6 @@ pub fn process_batch(
                 }
             })
         }
-        // for example if wv have 100 bytes and 10 cores
-        // chunks holds [(0,10), (10-20) .. etc]
-        //
     } else {
         for entry in batch {
             let res = (|| -> FileResult {
@@ -181,16 +117,11 @@ pub fn process_batch(
                     }
                 };
 
-                processed_files = processed_files.saturating_add(1);
-                processed_bytes = processed_bytes.saturating_add(bytes.len() as u64);
-
                 if std::str::from_utf8(&bytes).is_err() {
                     return FileResult::Skip;
                 }
 
                 let file_name = entry.file_name();
-
-                // only process files that match extension provided
 
                 if let Some(config_ext) = &config.file_extension {
                     let config_ext = normalize_extension(&config_ext);
@@ -220,8 +151,6 @@ pub fn process_batch(
 
                 let file_name_owned = file_name.to_string_lossy().into_owned();
 
-                // no match
-
                 FileResult::Match(file_name_owned, owned_temp)
             })();
             if let Err(send_err) = tx.send(res) {
@@ -229,17 +158,6 @@ pub fn process_batch(
             }
         }
     }
-
-    let elapsed_ns = batch_start.elapsed().as_nanos();
-    let timing = FileResult::BatchTiming {
-        processed_files,
-        processed_bytes,
-        elapsed_ns,
-    };
-
-    if let Err(send_err) = tx.send(timing) {
-        eprintln!("failed to send result back to main: {:?}", send_err);
-    };
 
     Ok(())
 }

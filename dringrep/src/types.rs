@@ -2,23 +2,28 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use clap::Parser;
+use crossbeam::channel::{Receiver, Sender, unbounded};
 use regex::{Regex, RegexBuilder};
 use std::env;
 use std::process;
-use std::sync::mpsc;
+
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use std::sync::{Arc, Mutex};
 use std::thread;
 pub enum Pattern {
     Literal {
-        pattern: Vec<String>,
+        pattern: AhoCorasick,
         case_insensitive: bool,
     },
     Regex(Regex),
     MultipleLiteral {
-        pattern: Vec<String>,
+        pattern: AhoCorasick,
 
         case_insensitive: bool,
     },
+    // AhoCorasick {
+
+    // }
 }
 
 // regex len needs some solution
@@ -84,6 +89,19 @@ impl From<Args> for Config {
                 .map(|ext| ext.to_string_lossy().to_string())
         });
 
+        // helper function put in utils later
+        fn build_ac(patterns: &[String], ignore_case: bool) -> AhoCorasick {
+            let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+            if ignore_case {
+                AhoCorasickBuilder::new()
+                    .ascii_case_insensitive(true)
+                    .build(&pattern_refs)
+                    .unwrap()
+            } else {
+                AhoCorasick::new(&pattern_refs).unwrap()
+            }
+        }
+
         let pattern = if args.regex {
             let q = if let Some(qs) = args.query.clone() {
                 qs
@@ -93,6 +111,7 @@ impl From<Args> for Config {
                     std::process::exit(1);
                 })
             };
+
             match RegexBuilder::new(&q).case_insensitive(ignore_case).build() {
                 Ok(re) => Pattern::Regex(re),
                 Err(e) => {
@@ -101,13 +120,15 @@ impl From<Args> for Config {
                 }
             }
         } else if !args.multiple.is_empty() {
+            let ac = build_ac(&args.multiple, ignore_case);
             Pattern::MultipleLiteral {
-                pattern: args.multiple.clone(),
+                pattern: ac,
                 case_insensitive: ignore_case,
             }
         } else if let Some(q) = args.query {
+            let ac = build_ac(&vec![q], ignore_case);
             Pattern::Literal {
-                pattern: vec![q],
+                pattern: ac,
                 case_insensitive: ignore_case,
             }
         } else {
@@ -133,7 +154,7 @@ impl From<Args> for Config {
 }
 pub struct ThreadPool {
     pub workers: Vec<Worker>,
-    pub sender: Option<mpsc::Sender<Job>>,
+    pub sender: Option<Sender<Job>>,
 }
 
 pub struct Worker {
@@ -142,20 +163,10 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn new(
-        id: usize,
-        receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
-        counter: Arc<Mutex<usize>>,
-    ) -> Self {
+    pub fn new(id: usize, receiver: Receiver<Job>, counter: Arc<Mutex<usize>>) -> Self {
         let thread = thread::spawn(move || {
             loop {
-                println!("job being handled by worker with ID: {}", id);
-                let job = {
-                    let recv_lock = receiver.lock().unwrap();
-                    recv_lock.recv()
-                };
-
-                match job {
+                match receiver.recv() {
                     Ok(job) => {
                         job();
                         let mut count = counter.lock().unwrap();
@@ -176,16 +187,12 @@ impl ThreadPool {
     pub fn new(size: usize, counter: Arc<Mutex<usize>>) -> Self {
         let mut workers = Vec::with_capacity(size);
 
-        let (sender, receiver) = mpsc::channel::<Job>();
-        let receiver = Arc::new(Mutex::new(receiver));
+        let (sender, receiver) = unbounded::<Job>();
 
         for id in 0..size {
             let counter_clone = Arc::clone(&counter);
-            workers.push(Worker::new(
-                id as usize,
-                Arc::clone(&receiver),
-                counter_clone,
-            ));
+            let rec_clone = receiver.clone();
+            workers.push(Worker::new(id as usize, rec_clone, counter_clone));
         }
 
         ThreadPool {
@@ -226,9 +233,4 @@ pub enum FileResult {
     Match(String, Vec<(usize, String)>),
     Skip,
     Error(String),
-    BatchTiming {
-        processed_files: usize,
-        processed_bytes: u64,
-        elapsed_ns: u128,
-    },
 }
